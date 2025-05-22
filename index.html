@@ -1,133 +1,440 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>#000000</title>
-    <link type="image/x-icon" rel="shortcut icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAHklEQVQ4T2NkYGD4z0ABYBw1gGE0DBhGw4BhWIQBAE5OEAELnjVHAAAAAElFTkSuQmCC">
+    <title>Dashboard CETESB - Qualidade do Ar</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root {
-            --color: #000000;
-            --color-transparent: #00000022;
+            --cor-boa: #4CAF50;
+            --cor-regular: #FFC107;
+            --cor-ruim: #FF9800;
+            --cor-pessima: #F44336;
         }
-
-        ::selection {
-            background: var(--color-transparent);
-        }
-
-        html,
-        body {
-            background: var(--color);
-            height: 100%;
-            margin: 0;
-        }
-
-        body {
+        
+        #indicador-iqar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            margin: 0 auto;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            font-size: 24px;
+            transition: all 0.3s;
         }
-
-        #color {
-            background: white;
-            color: var(--color);
-            font-size: 2.5rem;
-            font-weight: 300;
-            padding: 2.25rem 3rem;
-            font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, helvetica neue, helvetica, ubuntu, roboto, noto, segoe ui, arial, sans-serif;
-            cursor: text;
+        
+        .card-grafico {
+            height: 100%;
+            min-height: 300px;
+        }
+        
+        .info-box {
+            border-left: 4px solid;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+        }
+        
+        .info-box.bg-boa { border-color: var(--cor-boa); }
+        .info-box.bg-regular { border-color: var(--cor-regular); }
+        .info-box.bg-ruim { border-color: var(--cor-ruim); }
+        
+        #mapa { 
+            height: 400px; 
+            border-radius: 8px;
+            z-index: 1;
+        }
+        
+        .leaflet-popup-content b {
+            color: var(--cor-ruim);
+        }
+        
+        @media (max-width: 768px) {
+            .card-grafico {
+                margin-bottom: 20px;
+            }
         }
     </style>
 </head>
-
 <body>
-    <p id="color">#000000</p>
+    <div class="container-fluid py-4">
+        <!-- Cabeçalho -->
+        <header class="mb-5 text-center">
+            <h1 class="display-5 fw-bold">🌤️ Qualidade do Ar - CETESB</h1>
+            <p class="lead text-muted">Monitoramento em tempo real dos poluentes atmosféricos</p>
+            <div class="d-flex justify-content-center">
+                <div class="badge bg-secondary" id="ultima-atualizacao">Última atualização: carregando...</div>
+            </div>
+        </header>
+
+        <!-- Painel de Controle -->
+        <div class="row mb-4 g-3">
+            <div class="col-md-4">
+                <label for="municipio" class="form-label">Município</label>
+                <select id="municipio" class="form-select">
+                    <option value="">Todos os municípios</option>
+                    <option value="sao-paulo">São Paulo</option>
+                    <option value="campinas">Campinas</option>
+                    <option value="santos">Santos</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="poluente" class="form-label">Poluente</label>
+                <select id="poluente" class="form-select">
+                    <option value="PM2.5">Material Particulado (PM2.5)</option>
+                    <option value="O3">Ozônio (O3)</option>
+                    <option value="NO2">Dióxido de Nitrogênio (NO2)</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="periodo" class="form-label">Período</label>
+                <select id="periodo" class="form-select">
+                    <option value="24h">Últimas 24h</option>
+                    <option value="7d">Últimos 7 dias</option>
+                    <option value="30d">Últimos 30 dias</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button id="btn-atualizar" class="btn btn-primary w-100">
+                    <i class="bi bi-arrow-clockwise"></i> Atualizar
+                </button>
+            </div>
+        </div>
+
+        <!-- Linha de Status -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="info-box bg-boa">
+                    <h6>Índice Atual</h6>
+                    <div class="d-flex align-items-center">
+                        <div id="indicador-iqar" class="iqar-boa">-</div>
+                        <div class="ms-3" id="descricao-impacto">Carregando...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-box">
+                    <h6>Poluente Principal</h6>
+                    <p class="mb-0" id="poluente-principal">PM2.5</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-box">
+                    <h6>Concentração Atual</h6>
+                    <p class="mb-0" id="concentracao-atual">0 µg/m³</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-box">
+                    <h6>Estações Ativas</h6>
+                    <p class="mb-0" id="estacoes-ativas">12</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Visualizações Principais -->
+        <div class="row mb-4">
+            <!-- Gráfico Temporal -->
+            <div class="col-lg-8">
+                <div class="card card-grafico">
+                    <div class="card-body">
+                        <h5 class="card-title">Variação Temporal</h5>
+                        <canvas id="grafico-temporal"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Dicas de Saúde -->
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Recomendações de Saúde</h5>
+                        <div id="dicas-saude">
+                            <p class="alert alert-success">Qualidade do ar boa. Atividades ao ar livre são seguras.</p>
+                        </div>
+                        <hr>
+                        <h6>Legenda do Índice</h6>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>0-50</span>
+                                <span class="badge bg-success">Boa</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>51-100</span>
+                                <span class="badge bg-warning text-dark">Regular</span>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>101-199</span>
+                                <span class="badge bg-danger">Ruim</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mapa e Tabela -->
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Mapa de Concentração</h5>
+                        <div id="mapa"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Últimas Medições</h5>
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Estação</th>
+                                        <th>Poluente</th>
+                                        <th>Valor</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabela-medicoes">
+                                    <!-- Dados serão inseridos via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rodapé -->
+        <footer class="mt-5 text-center text-muted">
+            <p>Dados simulados para protótipo. Sistema baseado nos padrões CETESB.</p>
+        </footer>
+    </div>
+
+    <!-- Bibliotecas JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Código do Aplicativo -->
     <script>
-        function randomInt(min, max) {
-            return Math.floor(Math.random() * (max - min + 1) + min);
-        }
-
-        function hslToHex(h, s, l) {
-            h /= 360;
-            s /= 100;
-            l /= 100;
-            var r = void 0,
-                g = void 0,
-                b = void 0;
-            if (s === 0) {
-                r = g = b = l; // achromatic
-            } else {
-                var hue2rgb = function hue2rgb(p, q, t) {
-                    if (t < 0) t += 1;
-                    if (t > 1) t -= 1;
-                    if (t < 1 / 6) return p + (q - p) * 6 * t;
-                    if (t < 1 / 2) return q;
-                    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-                    return p;
-                };
-                var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                var p = 2 * l - q;
-                r = hue2rgb(p, q, h + 1 / 3);
-                g = hue2rgb(p, q, h);
-                b = hue2rgb(p, q, h - 1 / 3);
-            }
-            var toHex = function toHex(x) {
-                var hex = Math.round(x * 255).toString(16);
-                return hex.length === 1 ? '0' + hex : hex;
-            };
-            return '#' + toHex(r) + toHex(g) + toHex(b);
-        }
-
-        window.onload = function () {
-            let stopProp = function (ev) {
-                ev.stopPropagation();
-            }
-
-            var colorElement = document.getElementById("color");
-            colorElement.addEventListener("click", stopProp, false);
-            colorElement.addEventListener("mousedown", stopProp, false);
-
-            var setFavicon = function (hex) {
-                var canvas = document.createElement('canvas');
-                canvas.width = 16;
-                canvas.height = 16;
-                var ctx = canvas.getContext('2d');
-                ctx.fillStyle = hex;
-                ctx.fillRect(0, 0, 16, 16);
-                document.getElementsByTagName('link')[0].href = canvas.toDataURL("image/x-icon");
-            }
-
-            var setRandomColor = function setRandomColor() {
-                var h = void 0,
-                    s = void 0,
-                    l = void 0;
-
-                h = randomInt(0, 359);
-                s = randomInt(55, 75);
-                l = randomInt(40, 60);
-
-                document.documentElement.style.setProperty('--color', 'hsl(' + h + ', ' + s + '%, ' + l + '%)');
-                var hex = hslToHex(h, s, l);
-                document.title = hex;
-                colorElement.innerHTML = hex;
-                document.documentElement.style.setProperty('--color-transparent', hex + '22');
-
-                setFavicon(hex);
-            };
-            setRandomColor();
-
-            var body = document.getElementsByTagName("body")[0];
-            body.addEventListener("mousedown", function (ev) {
-                ev.preventDefault();
-            });
-            body.addEventListener("click", function () {
-                setRandomColor();
-            }, false);
+        // Dados simulados (substituir por API real)
+        const dadosSimulados = {
+            "sao-paulo": {
+                "PM2.5": {
+                    "24h": [12, 15, 18, 22, 25, 28, 24, 20, 18, 15, 14, 16, 19, 22, 25, 27, 30, 32, 28, 25, 22, 19, 16, 14],
+                    "7d": [25, 28, 32, 35, 30, 28, 25],
+                    "30d": Array(30).fill().map((_,i) => 20 + Math.sin(i/3)*10 + Math.random()*5)
+                }
+            },
+            estacoes: [
+                { nome: "Cerqueira César", lat: -23.56, lng: -46.66, iqar: 65, poluentes: {"PM2.5": 28, "O3": 45} },
+                { nome: "Pinheiros", lat: -23.57, lng: -46.70, iqar: 82, poluentes: {"PM2.5": 35, "O3": 52} },
+                { nome: "Parque D.Pedro II", lat: -23.54, lng: -46.63, iqar: 45, poluentes: {"PM2.5": 18, "O3": 40} }
+            ]
         };
+
+        // Inicialização do Mapa
+        const map = L.map('mapa').setView([-23.5505, -46.6333], 11);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        // Inicialização do Gráfico
+        const ctx = document.getElementById('grafico-temporal').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive: true,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.raw} µg/m³`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Concentração (µg/m³)' }
+                    }
+                }
+            }
+        });
+
+        // Funções principais
+        function carregarDados() {
+            const municipio = document.getElementById('municipio').value;
+            const poluente = document.getElementById('poluente').value;
+            const periodo = document.getElementById('periodo').value;
+            
+            // Simular carga de dados
+            setTimeout(() => {
+                atualizarGrafico(municipio, poluente, periodo);
+                atualizarMapa();
+                atualizarTabela();
+                atualizarIndicadores(65); // Valor simulado
+                
+                document.getElementById('ultima-atualizacao').textContent = 
+                    `Última atualização: ${new Date().toLocaleString()}`;
+            }, 800);
+        }
+
+        function atualizarGrafico(municipio, poluente, periodo) {
+            // Dados simulados - na prática viriam da API
+            let labels, valores;
+            
+            if (periodo === '24h') {
+                labels = Array(24).fill().map((_,i) => `${i}h`);
+                valores = dadosSimulados[municipio || 'sao-paulo'][poluente]['24h'];
+            } else if (periodo === '7d') {
+                labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+                valores = dadosSimulados[municipio || 'sao-paulo'][poluente]['7d'];
+            } else {
+                const hoje = new Date();
+                labels = Array(30).fill().map((_,i) => {
+                    const d = new Date(hoje);
+                    d.setDate(d.getDate() - 30 + i);
+                    return d.getDate() + '/' + (d.getMonth()+1);
+                });
+                valores = dadosSimulados[municipio || 'sao-paulo'][poluente]['30d'];
+            }
+            
+            chart.data.labels = labels;
+            chart.data.datasets = [
+                {
+                    label: `Concentração de ${poluente}`,
+                    data: valores,
+                    borderColor: '#3e95cd',
+                    backgroundColor: 'rgba(58, 134, 255, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                },
+                {
+                    label: 'Limite Seguro',
+                    data: Array(labels.length).fill(poluente === 'PM2.5' ? 25 : 100),
+                    borderColor: '#ff0000',
+                    borderDash: [5, 5],
+                    pointRadius: 0
+                }
+            ];
+            chart.update();
+        }
+
+        function atualizarMapa() {
+            // Limpar marcadores existentes
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                    map.removeLayer(layer);
+                }
+            });
+            
+            // Adicionar novos marcadores
+            dadosSimulados.estacoes.forEach(estacao => {
+                const cor = estacao.iqar > 80 ? 'var(--cor-ruim)' : 
+                           estacao.iqar > 50 ? 'var(--cor-regular)' : 'var(--cor-boa)';
+                
+                L.circleMarker([estacao.lat, estacao.lng], {
+                    radius: 8,
+                    fillColor: cor,
+                    color: '#000',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).bindPopup(`
+                    <b>${estacao.nome}</b><br>
+                    IQAR: ${estacao.iqar}<br>
+                    PM2.5: ${estacao.poluentes['PM2.5']} µg/m³<br>
+                    O3: ${estacao.poluentes['O3']} µg/m³
+                `).addTo(map);
+            });
+        }
+
+        function atualizarTabela() {
+            const tbody = document.getElementById('tabela-medicoes');
+            tbody.innerHTML = '';
+            
+            dadosSimulados.estacoes.forEach(estacao => {
+                const tr = document.createElement('tr');
+                
+                // Classificação por pior poluente
+                const maiorPoluente = Object.entries(estacao.poluentes).reduce((a,b) => a[1]>b[1] ? a : b);
+                const status = maiorPoluente[1] > 30 ? 'Ruim' : 'Bom';
+                const classe = status === 'Ruim' ? 'danger' : 'success';
+                
+                tr.innerHTML = `
+                    <td>${estacao.nome}</td>
+                    <td>${maiorPoluente[0]}</td>
+                    <td>${maiorPoluente[1]} µg/m³</td>
+                    <td><span class="badge bg-${classe}">${status}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function atualizarIndicadores(iqar) {
+            const indicador = document.getElementById('indicador-iqar');
+            const descricao = document.getElementById('descricao-impacto');
+            const dicas = document.getElementById('dicas-saude');
+            
+            indicador.textContent = iqar;
+            
+            if (iqar <= 50) {
+                indicador.className = 'iqar-boa';
+                indicador.style.backgroundColor = 'var(--cor-boa)';
+                descricao.textContent = 'Qualidade boa';
+                dicas.innerHTML = '<p class="alert alert-success">Qualidade do ar satisfatória. Atividades ao ar livre são seguras para todos.</p>';
+            } else if (iqar <= 100) {
+                indicador.className = 'iqar-regular';
+                indicador.style.backgroundColor = 'var(--cor-regular)';
+                descricao.textContent = 'Qualidade regular';
+                dicas.innerHTML = `
+                    <p class="alert alert-warning">
+                        Pessoas de grupos sensíveis (crianças, idosos, pessoas com doenças respiratórias) 
+                        devem reduzir esforços prolongados ao ar livre.
+                    </p>
+                `;
+            } else {
+                indicador.className = 'iqar-ruim';
+                indicador.style.backgroundColor = 'var(--cor-ruim)';
+                descricao.textContent = 'Qualidade ruim';
+                dicas.innerHTML = `
+                    <p class="alert alert-danger">
+                        Toda a população pode apresentar sintomas como tosse seca e cansaço. 
+                        Evite atividades físicas ao ar livre.
+                    </p>
+                `;
+            }
+            
+            document.getElementById('poluente-principal').textContent = document.getElementById('poluente').value;
+            document.getElementById('concentracao-atual').textContent = 
+                `${dadosSimulados.estacoes[0].poluentes['PM2.5']} µg/m³`;
+            document.getElementById('estacoes-ativas').textContent = dadosSimulados.estacoes.length;
+        }
+
+        // Event Listeners
+        document.getElementById('btn-atualizar').addEventListener('click', carregarDados);
+        document.getElementById('municipio').addEventListener('change', carregarDados);
+        document.getElementById('poluente').addEventListener('change', carregarDados);
+        document.getElementById('periodo').addEventListener('change', carregarDados);
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarDados();
+            document.getElementById('ultima-atualizacao').textContent = 
+                `Última atualização: ${new Date().toLocaleString()}`;
+        });
     </script>
 </body>
-
 </html>
